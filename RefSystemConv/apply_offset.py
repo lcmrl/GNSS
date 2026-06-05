@@ -1,3 +1,6 @@
+# Usato nel paper
+#  python .\apply_offset.py .\input.txt -0.02 0 -0.02 -o ./aaa.txt --rotation-convention local_to_world --quat-order xyzw
+
 """Apply a local-frame XYZ offset to pose text files.
 
 Input lines must contain:
@@ -41,6 +44,15 @@ def parse_args() -> argparse.Namespace:
 		choices=("xyzw", "wxyz"),
 		default="xyzw",
 		help="Quaternion component order in the input file. Default: xyzw",
+	)
+	parser.add_argument(
+		"--rotation-convention",
+		choices=("local_to_world", "world_to_local"),
+		default="local_to_world",
+		help=(
+			"How the stored quaternion should be interpreted. "
+			"Use world_to_local if your file stores the inverse pose rotation."
+		),
 	)
 	return parser.parse_args()
 
@@ -97,9 +109,15 @@ def rotate_vector_by_quaternion(
 	)
 
 
-def apply_local_offset(pose: Pose, offset_xyz: Sequence[float]) -> Pose:
+def conjugate_quaternion(qx: float, qy: float, qz: float, qw: float) -> Tuple[float, float, float, float]:
+	return -qx, -qy, -qz, qw
+
+
+def apply_local_offset(pose: Pose, offset_xyz: Sequence[float], rotation_convention: str) -> Pose:
 	label, x, y, z, qx, qy, qz, qw = pose
 	qx, qy, qz, qw = normalize_quaternion(qx, qy, qz, qw)
+	if rotation_convention == "world_to_local":
+		qx, qy, qz, qw = conjugate_quaternion(qx, qy, qz, qw)
 	dx, dy, dz = rotate_vector_by_quaternion(offset_xyz, qx, qy, qz, qw)
 	return label, x + dx, y + dy, z + dz, qx, qy, qz, qw
 
@@ -125,7 +143,7 @@ def main() -> int:
 				poses.append(pose)
 
 	offset_xyz = tuple(args.offset_xyz)
-	transformed_poses = [apply_local_offset(pose, offset_xyz) for pose in poses]
+	transformed_poses = [apply_local_offset(pose, offset_xyz, args.rotation_convention) for pose in poses]
 
 	with open(output_file, "w", encoding="utf-8") as handle:
 		for pose in transformed_poses:
